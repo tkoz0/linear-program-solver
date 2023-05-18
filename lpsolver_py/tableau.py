@@ -65,7 +65,7 @@ class FracTableau:
         return self.getNumCons(),self.getNumVars()
 
     def getZ(self) -> Frac:
-        ''' (negative) objective value '''
+        ''' objective value (-z) '''
         return -self._z
 
     def getC(self) -> list[Frac]:
@@ -235,7 +235,7 @@ class FracTableau:
     def rowMult(self, r: int, m):
         ''' multiply constraint row r by m '''
         m = Frac(m)
-        if m == ONE:
+        if m == ONE: # nothing will change
             return
         self._b[r] *= m
         self._a[r] = [arj*m for arj in self._a[r]]
@@ -250,7 +250,7 @@ class FracTableau:
     def rowAdd(self, rd: int, rs: int, m: Any = ONE):
         ''' add m times row rs (source) to row rd (destination) '''
         m = Frac(m)
-        if m == ZERO:
+        if m == ZERO: # nothing will change
             return
         self._b[rd] += m*self._b[rs]
         for j in range(self.getNumVars()):

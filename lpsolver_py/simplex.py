@@ -36,15 +36,41 @@ class FracSimplex:
         '''
         convert the tableau into an initial basic feasible solution
         uses the method of artificial variables
+        for efficiency, only adds missing columns instead of all
         '''
         raise NotImplementedError()
         raise ValueError('infeasible problem')
 
-    def findPivotMinIndex(self) -> tuple[int,int]|L_opt|L_unb:
+    def _pivot(self, r: int, c: int):
+        ''' pivot without checking validity '''
+        self._tab.pivot(r,c)
+
+    def pivot(self, r: int, c: int):
+        '''
+        pivot, checking that the pivot maintains feasibility
+        exception if pivoting would violate canonical form
+        '''
+        # determine minimum ratio
+        minratio: None|Frac = None
+        for i in range(self._tab.getNumCons()):
+            a = self._tab.getAij(i,c)
+            if a <= ZERO:
+                continue
+            ratio = self._tab.getBi(i)/a
+            if minratio is None or ratio < minratio:
+                minratio = ratio
+        ratio = self._tab.getBi(r)/self._tab.getAij(r,c)
+        if ratio != minratio:
+            raise ValueError(f'bad pivot by min ratio test, r = {r}, c = {c}')
+        self._pivot(r,c)
+
+    def findPivotMinIndex(self, do_pivot: bool = False) \
+            -> tuple[int,int]|L_opt|L_unb:
         '''
         find a pivot r,c with Bland's min index rule (for avoiding cycling)
         returns 'optimal' or 'unbounded' if no suitable pivot is found
         assumes the tableau is in canonical form
+        do_pivot = perform pivot if one is found?
         '''
         m,n = self._tab.getTableauSize()
         j = -1
@@ -67,14 +93,18 @@ class FracSimplex:
                 ratio = r
         if ratio is None: # all column entries negative
             return 'unbounded'
+        if do_pivot:
+            self._pivot(i,j)
         return i,j
 
-    def findPivotStandard(self) -> tuple[int,int]|L_opt|L_unb:
+    def findPivotStandard(self, do_pivot: bool = False) \
+            -> tuple[int,int]|L_opt|L_unb:
         '''
         find a pivot r,c with the standard minimum reduced cost rule
         returns 'optimal' or 'unbounded' if no suitable pivot is found
         assumes the tableau is in canonical form
         this method may lead to cycling
+        do_pivot = perform pivot if one is found?
         '''
         m,n = self._tab.getTableauSize()
         j = -1
@@ -98,6 +128,8 @@ class FracSimplex:
                 ratio = r
         if ratio is None: # all column entries negative
             return 'unbounded'
+        if do_pivot:
+            self._pivot(i,j)
         return i,j
 
     def findPivotAll(self) -> list[tuple[int,int]]:
@@ -105,13 +137,11 @@ class FracSimplex:
         find all possible pivots that maintain canonical form
         assumes the tableau is in canonical form
         does not check for optimal or unbounded form
+        pivots may move the objective value farther from optimality
         '''
         ret: list[tuple[int,int]] = []
         m,n = self._tab.getTableauSize()
         for j in range(n):
-            cj = self._tab.getCj(j)
-            if cj >= ZERO:
-                continue
             # keep track of all pivots with this ratio
             # reset when a better minimum ratio is found
             ratio: None|Frac = None

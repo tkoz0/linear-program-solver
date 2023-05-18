@@ -473,6 +473,8 @@ class FracTableau:
                     bcols[i] = collist[0]
         return all(len(collist) > 0 for collist in cols)
 
+    # the following assume canonical form for performance reasons
+
     def isOptimal(self) -> bool:
         ''' assuming canonical form, is the tableau in optimal form '''
         return all(cj >= ZERO for cj in self._c)

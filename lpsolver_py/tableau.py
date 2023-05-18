@@ -1,4 +1,7 @@
+import csv
 from fractions import Fraction as Frac
+import io
+import json
 from typing import Any,Literal
 
 # fraction constants
@@ -10,17 +13,24 @@ L_opt = Literal['optimal']
 L_unb = Literal['unbounded']
 L_inf = Literal['infeasible']
 
-class Tableau:
+class FracTableau:
     '''
-    simplex tableau
+    full simplex tableau with rational numbers
+    for usability as more of a testing/academic tool,
+    variables (columns) have names (str) and markings (bool)
     example with m=3,n=5
+          x0  x1  x2  x3  x4
     -z |  c0  c1  c2  c3  c4
     ------------------------
     b0 | a00 a01 a02 a03 a04
     b1 | a10 a11 a12 a13 a14
     b2 | a20 a21 a22 a23 a24
-    for usability as more of a testing/academic tool,
-    variables (columns) have names (str) and markings (bool)
+    conventions:
+    - tableau size m*n is the size of the constraint matrix
+    - m constraints
+    - n variables
+    - i indexes constraints
+    - j indexes variables
     '''
 
     def __init__(self, m: int, n: int):
@@ -161,11 +171,28 @@ class Tableau:
         self._cl.append(v)
         self._cm.append(False)
 
+    def addVars(self, vs: list[str]):
+        ''' add multiple variables '''
+        self._n += len(vs)
+        self._c += [ZERO]*len(vs)
+        for row in self._a:
+            row += [ZERO]*len(vs)
+        self._cl += vs
+        self._cm += [False]*len(vs)
+
     def addCon(self):
         ''' add constraint with new values initialized as 0 '''
         self._m += 1
         self._b.append(ZERO)
         self._a.append([ZERO]*self._n)
+
+    def addCons(self, count: int):
+        ''' add multiple constraints '''
+        if count <= 0:
+            raise ValueError(f'need count > 0, provided count = {count}')
+        self._m += count
+        self._b += [ZERO]*count
+        self._a += [[ZERO]*self._n for _ in range(count)]
 
     def permuteRows(self, perm: list[int]):
         '''
@@ -191,21 +218,40 @@ class Tableau:
         self._cl = [self._cl[j] for j in perm]
         self._cm = [self._cm[j] for j in perm]
 
+    def copy(self) -> 'FracTableau':
+        ''' returns a copy of this tableau '''
+        m,n = self.getTableauSize()
+        ret = FracTableau(m,n)
+        ret._z = self._z
+        ret._c = self._c[:]
+        ret._b = self._b[:]
+        ret._a = [row[:] for row in self._a]
+        ret._cl = self._cl[:]
+        ret._cm = self._cm[:]
+        return ret
+
     # math operations
 
     def rowMult(self, r: int, m):
         ''' multiply constraint row r by m '''
         m = Frac(m)
+        if m == ONE:
+            return
         self._b[r] *= m
         self._a[r] = [arj*m for arj in self._a[r]]
 
     def rowDiv(self, r: int, d):
         ''' divide constraint row by d (d != 0) '''
         d = Frac(d)
+        if d == ZERO:
+            raise ZeroDivisionError('cannot divide row by zero')
         self.rowMult(r,ONE/d)
 
     def rowAdd(self, rd: int, rs: int, m: Any = ONE):
         ''' add m times row rs (source) to row rd (destination) '''
+        m = Frac(m)
+        if m == ZERO:
+            return
         self._b[rd] += m*self._b[rs]
         for j in range(self.getNumVars()):
             self._a[rd][j] += m*self._a[rs][j]
@@ -216,6 +262,9 @@ class Tableau:
 
     def rowAddToObj(self, r: int, m: Any = ONE):
         ''' add m times row r to objective row '''
+        m = Frac(m)
+        if m == ZERO:
+            return
         self._z += m*self._b[r]
         for j in range(self.getNumVars()):
             self._c[j] += m*self._a[r][j]
@@ -229,6 +278,8 @@ class Tableau:
         perform a simplex pivot on r,c
         assumes nothing about the tableau
         '''
+        if self._a[r][c] == ZERO:
+            raise ZeroDivisionError(f'zero pivot {r},{c}')
         self.rowDiv(r,self._a[r][c]) # normalize row
         self.rowAddToObj(r,-self._c[c]) # make reduced cost 0
         # eliminate remaining nonzeros
@@ -237,145 +288,210 @@ class Tableau:
                 continue
             self.rowSub(rr,r,self._a[rr][c])
 
-    def findPivotMinIndex(self) -> tuple[int,int]|L_opt|L_unb:
-        '''
-        find a pivot r,c with Bland's min index rule (for avoiding cycling)
-        returns 'optimal' or 'unbounded' if no suitable pivot is found
-        assumes the tableau is in canonical form
-        '''
-        m,n = self.getTableauSize()
-        j = -1
-        for j2 in range(n): # find negative reduced cost
-            if self.getCj(j2) >= ZERO:
-                continue
-            j = j2
-            break
-        if j == -1: # all reduced costs nonnegative
-            return 'optimal'
-        i = -1
-        ratio: None|Frac = None
-        for i2 in range(m): # find first row with minimum ratio
-            a = self.getAij(i2,j)
-            if a <= ZERO:
-                continue
-            r = self.getBi(i2)/a
-            if ratio is None or r < ratio:
-                i = i2
-                ratio = r
-        if ratio is None: # all column entries negative
-            return 'unbounded'
-        return i,j
-
-    def findPivotStandard(self) -> tuple[int,int]|L_opt|L_unb:
-        '''
-        find a pivot r,c with the standard minimum reduced cost rule
-        returns 'optimal' or 'unbounded' if not suitable pivot is found
-        assumes the tableau is in canonical form
-        '''
-        m,n = self.getTableauSize()
-        j = -1
-        for j2 in range(n): # find smallest negative reduced cost
-            cj2 = self.getCj(j2)
-            if cj2 >= ZERO:
-                continue
-            if j == -1 or cj2 < self.getCj(j): # smaller
-                j = j2
-        if j == -1: # all reduced costs nonnegative
-            return 'optimal'
-        ratio: None|Frac = None
-        i = -1
-        for i2 in range(m): # find first row with minimum ratio
-            a = self.getAij(i2,j)
-            if a <= ZERO:
-                continue
-            r = self.getBi(i2)/a
-            if ratio is None or r < ratio:
-                i = i2
-                ratio = r
-        if ratio is None: # all column entries negative
-            return 'unbounded'
-        return i,j
-
-    def findPivotAll(self) -> list[tuple[int,int]]:
-        '''
-        find all possible pivots that maintain canonical form
-        assumes the tableau is in canonical form
-        does not check for optimal or unbounded form
-        '''
-        ret: list[tuple[int,int]] = []
-        m,n = self.getTableauSize()
-        for j in range(n):
-            cj = self.getCj(j)
-            if cj >= ZERO:
-                continue
-            # keep track of all pivots with this ratio
-            # reset when a better minimum ratio is found
-            ratio: None|Frac = None
-            pivotlist: list[tuple[int,int]] = []
-            for i in range(m):
-                aij = self.getAij(i,j)
-                if aij <= ZERO:
-                    continue
-                r = self.getBi(i)/aij
-                if ratio is None:
-                    ratio = r
-                    pivotlist.append((i,j))
-                elif r == ratio:
-                    pivotlist.append((i,j))
-                elif r < ratio:
-                    ratio = r
-                    pivotlist = []
-                    pivotlist.append((i,j))
-                # if greater, do nothing
-            ret += pivotlist
-        return ret
-
-    def findBFS(self):
-        '''
-        convert the tableau into an initial basic feasible solution
-        uses the method of artificial variables
-        '''
-        raise NotImplementedError()
-
     # tableau input/output
 
     def loadFile(self, file: str):
-        raise NotImplementedError()
+        ''' load data from a JSON file '''
+        with open(file,'r') as f:
+            self.loadJson(json.loads(f.read()))
 
     def saveFile(self, file: str):
-        raise NotImplementedError()
+        ''' save data to a JSON file '''
+        with open(file,'w') as f:
+            f.write(json.dumps(self.saveJson(),separators=(',',':')))
 
-    def loadFromJson(self, jdata):
-        raise NotImplementedError()
+    def loadJson(self, data: dict[str,Any]):
+        ''' create a tableau from JSON file data '''
+        assert isinstance(data['m'],int) and data['m'] > 0
+        assert isinstance(data['n'],int) and data['n'] > 0
+        m = data['m']
+        n = data['n']
+        self._m = m
+        self._n = n
+        self._z = ZERO
+        self._c = [ZERO]*n
+        self._b = [ZERO]*m
+        self._a = [[ZERO]*n for _ in range(m)]
+        self._cl = ['']*n
+        self._cm = [False]*n
+        self._z = Frac(data['z'])
+        for j in range(n):
+            self._c[j] = Frac(data['c'][j])
+        for i in range(m):
+            self._b[i] = Frac(data['b'][i])
+        for i in range(m):
+            for j in range(n):
+                self._a[i][j] = Frac(data['a'][i][j])
+        for j in range(n):
+            self._cl[j] = str(data['cl'][j])
+            self._cm[j] = bool(data['cm'][j])
 
-    def toJson(self):
-        raise NotImplementedError()
+    def saveJson(self) -> dict[str,Any]:
+        ''' create JSON object for saving to file '''
+        data: dict[str,Any] = {}
+        m,n = self.getTableauSize()
+        data['m'] = m
+        data['n'] = n
+        data['z'] = str(self._z)
+        data['c'] = [str(cj) for cj in self._c]
+        data['b'] = [str(bi) for bi in self._b]
+        data['a'] = [[str(aij) for aij in row] for row in self._a]
+        data['cl'] = self._cl
+        data['cm'] = self._cm
+        return data
 
-    def printText(self, labels: bool = True, spacing: int = 2) -> str:
-        raise NotImplementedError()
+    def printGrid(self, labels: bool = True, rownums: bool = True,
+                  mpre: str = '(', msuf: str = ')') -> list[list[str]]:
+        '''
+        create a 2d grid representation of the tableau
+        labels = include variable labels?
+        rownums = include row indexes as labels?
+        mpre = mark prefix for labels of marked variables
+        msuf = mark suffix for labels of marked variables
+        '''
+        data: list[list[str]] = []
+        if labels: # labels row
+            row = ['',''] if rownums else ['']
+            row += [f'{mpre}{l}{msuf}' if self._cm[j] else l
+                    for j,l in enumerate(self._cl)]
+            data.append(row)
+        # objective row
+        row = ['',str(self._z)] if rownums else [str(self._z)]
+        row += [str(cj) for cj in self._c]
+        data.append(row)
+        for i in range(self.getNumCons()): # constraint rows
+            row = [f'{i}',str(self._b[i])] if rownums else [str(self._b[i])]
+            row += [str(aij) for aij in self._a[i]]
+            data.append(row)
+        return data
 
-    def printLatex(self, labels: bool = True, lab_mm: bool = True) -> str:
-        raise NotImplementedError()
+    def printText(self, labels: bool = True, rownums: bool = False,
+                  spacing: int = 2, left: bool = False,
+                  mpre: str = '(', msuf: str = ')') -> str:
+        '''
+        create a text string for a neat tableau (meant for terminal output)
+        labels = include variable labels?
+        rownums = include row indexes as labels?
+        spacing = number of spaces between columns
+        left = left justify values instead of right justify
+        mpre = mark prefix for labels of marked variables
+        msuf = mark suffix for labels of marked variables
+        '''
+        grid = self.printGrid(labels,rownums,mpre,msuf)
+        # determine column widths by longest string
+        cw = [max(len(grid[r][c]) for r in range(len(grid)))
+              for c in range(len(grid[0]))]
+        for row in grid: # pad grid values to proper width
+            for j in range(len(row)):
+                if left:
+                    row[j] = f'{row[j]:<{cw[j]}}'
+                else:
+                    row[j] = f'{row[j]:>{cw[j]}}'
+        spaces = ' '*spacing
+        sepline = '-'*(spacing*(len(grid[0]) + 2) + sum(cw) + 3)
+        lines: list[str] = [sepline]
+        sepi = 2 if labels else 1
+        for i,row in enumerate(grid):
+            if i == sepi:
+                lines.append(sepline)
+            lines.append(f'|{spaces}'+
+                         spaces.join(row[:sepi]+['|']+row[sepi:])
+                         +f'{spaces}|')
+        lines.append(sepline)
+        return '\n'.join(lines)+'\n'
 
-    def printCSV(self, labels: bool = True) -> str:
-        raise NotImplementedError()
+    def printLatex(self, labels: bool = True, rownums: bool = False,
+                   mpre: str = '(', msuf: str = ')') -> str:
+        grid = self.printGrid(labels,rownums,mpre,msuf)
+        m,n = self.getTableauSize()
+        sepi = 2 if labels else 1
+        lines: list[str] = []
+        lines.append('\\begin{tabular}{'+('|c'*sepi)+'|'+('c'*n)+'|} \\hline')
+        # math mode for table entries
+        grid = [[f'${s}$' if s else s for s in row] for row in grid]
+        for r,row in enumerate(grid):
+            line = ' & '.join(row) + ' \\\\'
+            if r < sepi or r == len(grid)-1:
+                line += '\\hline'
+            lines.append(line)
+        lines.append('\\end{tabular}')
+        return '\n'.join(lines)+'\n'
+
+    def printCSV(self, labels: bool = True, rownums: bool = False,
+                 mpre: str = '(', msuf: str = ')') -> str:
+        '''
+        output as csv data
+        labels = include variable labels?
+        rownums = incnlude row indexes as labels?
+        mpre = mark prefix for labels of marked variables
+        msuf = mark suffix for labels of marked variables
+        '''
+        grid = self.printGrid(labels,rownums,mpre,msuf)
+        retio = io.StringIO()
+        csvw = csv.writer(retio)
+        csvw.writerows(grid)
+        return retio.getvalue()
 
     def __str__(self) -> str:
         return self.printText()
 
+    def __repr__(self) -> str:
+        return f'<FracTableau object at {hex(id(self))}, ' \
+            f'm = {self._m}, n = {self._n}>'
+
     # tableau form checking
 
-    def isCanonical(self) -> bool:
-        raise NotImplementedError()
+    def isCanonical(self, bcols: list[int]|None = None) -> bool:
+        '''
+        check for canonical form
+        if cols is not None, stores indexes of basic columns (0..m-1)
+        bcols[i] = j means column j is basic with a_ij = 1
+        bcols[i] = -1 if no such basic column is in the tableau
+        '''
+        m,n = self.getTableauSize()
+        if any(bi < ZERO for bi in self._b): # need all bi >= 0
+            return False
+        # row index of 1 to column indexes basic with that 1
+        cols: list[list[int]] = [[] for _ in range(m)]
+        for j in range(n): # find basic columns
+            if self._c[j] != ZERO: # reduced cost must be 0
+                continue
+            onei = -1
+            for i in range(m):
+                if self._a[i][j] == ONE:
+                    onei = i
+                    break
+            # found 1, check that all others are 0
+            if onei != -1 and all(i == onei or self._a[i][j] == ZERO
+                                  for i in range(m)):
+                cols[onei].append(j)
+        if bcols is not None: # store basic column information
+            for i,collist in enumerate(cols):
+                if len(collist) == 0:
+                    bcols[i] = -1 # not found
+                else:
+                    bcols[i] = collist[0]
+        return all(len(collist) > 0 for collist in cols)
 
     def isOptimal(self) -> bool:
-        raise NotImplementedError()
+        ''' assuming canonical form, is the tableau in optimal form '''
+        return all(cj >= ZERO for cj in self._c)
 
     def isUnbounded(self) -> bool:
-        raise NotImplementedError()
+        ''' assuming canonical form, is the tableau in unbounded form '''
+        return any(cj < ZERO and all(self._a[i][j] <= ZERO
+                                     for i in range(self._m))
+                   for j,cj in enumerate(self._c))
 
     def isInfeasible(self) -> bool:
-        raise NotImplementedError()
+        ''' assuming canonical form, is the tableau in infeasible form '''
+        return any(bi > ZERO and all(self._a[i][j] <= ZERO
+                                     for j in range(self._n))
+                   for i,bi in enumerate(self._b))
 
     def isDegenerate(self) -> bool:
-        raise NotImplementedError()
+        '''
+        assuming canonical form
+        determines if this basic feasible solution is degenerate
+        '''
+        return any(bi == ZERO for bi in self._b)

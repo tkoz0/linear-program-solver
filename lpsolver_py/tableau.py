@@ -377,6 +377,8 @@ class FracTableau:
         mpre = mark prefix for labels of marked variables
         msuf = mark suffix for labels of marked variables
         '''
+        if spacing < 1:
+            raise ValueError(f'spacing must be positive, provided {spacing}')
         grid = self.printGrid(labels,rownums,mpre,msuf)
         # determine column widths by longest string
         cw = [max(len(grid[r][c]) for r in range(len(grid)))
@@ -391,11 +393,12 @@ class FracTableau:
         sepline = '-'*(spacing*(len(grid[0]) + 2) + sum(cw) + 3)
         lines: list[str] = [sepline]
         sepi = 2 if labels else 1
+        sepj = 2 if rownums else 1
         for i,row in enumerate(grid):
             if i == sepi:
                 lines.append(sepline)
             lines.append(f'|{spaces}'+
-                         spaces.join(row[:sepi]+['|']+row[sepi:])
+                         spaces.join(row[:sepj]+['|']+row[sepj:])
                          +f'{spaces}|')
         lines.append(sepline)
         return '\n'.join(lines)+'\n'

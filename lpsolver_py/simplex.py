@@ -51,7 +51,6 @@ class FracSimplex:
         self._tab.setZ(0)
         # number of artificial variables needed
         missing = [i for i,j in enumerate(self._bfs) if j == -1]
-        num_ar = sum(1 for j in self._bfs if j == -1)
         self._tab.addVars([f'$a{i}' for i in missing])
         for ind,i in enumerate(missing): # handle variable adding
             self._tab.setCj(n+ind,ONE)
@@ -59,35 +58,7 @@ class FracSimplex:
             self._tab.rowSubFromObj(i,ONE)
             self._bfs[i] = n+ind
         # solve artificial problem
-        num_piv = 0
-        obj_val = self._tab.getZ()
-        steps_stuck = 0 # count steps with unchanged objective value
-        is_opt = self._tab.isOptimal()
-        # perform standard pivots until objective value seems stuck
-        while steps_stuck < m+n:
-            result = self.findPivotStandard(True)
-            assert result is not 'unbounded', \
-                'unbounded artificial problem (internal error)'
-            if result is 'optimal':
-                is_opt = True
-                break
-            # successfully pivoted
-            num_piv += 1
-            z = self._tab.getZ()
-            assert z <= obj_val
-            if z == obj_val:
-                steps_stuck += 1
-            else:
-                steps_stuck = 0
-        while not is_opt: # got stuck, switch to min index rule
-            result = self.findPivotMinIndex(True)
-            assert result is not 'unbounded', \
-                'unbounded artificial problem (internal error)'
-            if result is 'optimal':
-                is_opt = True
-                break
-            # successfully pivoted
-            num_piv += 1
+        self.solve()
         # solution should now be optimal
         z = self._tab.getZ()
         if z != ZERO:
@@ -134,6 +105,88 @@ class FracSimplex:
         assert self._tab.isCanonical(), 'tableau not canonical (internal error)'
         for j in self._bfs:
             self._tab.setVarMark(j,True)
+
+    def solve(self):
+        '''
+        pivot to an optimal solution
+        uses standard lowest reduced cost pivots
+        switches to min index pivots if objective value seems stuck
+        '''
+        m,n = self._tab.getTableauSize()
+        num_piv = 0
+        obj_val = self._tab.getZ()
+        steps_stuck = 0 # count steps with unchanged objective value
+        is_opt = self._tab.isOptimal()
+        if is_opt:
+            return
+        while steps_stuck < m+n: # do standard pivots
+            result = self.findPivotStandard(True)
+            assert result != 'unbounded', \
+                'unbounded artificial problem (internal error)'
+            if result == 'optimal':
+                is_opt = True
+                break
+            # successfully pivoted
+            num_piv += 1
+            z = self._tab.getZ()
+            assert z <= obj_val, 'objective value increased (internal error)'
+            if z == obj_val:
+                steps_stuck += 1
+            else:
+                steps_stuck = 0
+        while not is_opt: # stuck, switch to min index rule
+            result = self.findPivotMinIndex(True)
+            assert result != 'unbounded', \
+                'unbounded artificial problem (internal error)'
+            if result == 'optimal':
+                is_opt = True
+                break
+            # successfully pivoted
+            num_piv += 1
+        # should now be at optimality
+        assert self._tab.isOptimal(), f'solver failed (internal error)'
+
+    def getBasicSequence(self) -> list[int]:
+        '''
+        returns the basic sequence using column indexes
+        (the internal representation) do not modify
+        '''
+        return self._bfs
+
+    def getBasicSequenceNames(self) -> list[str]:
+        '''
+        returns the basic sequence using variable names
+        '''
+        ret: list[str] = []
+        for j in self._bfs:
+            ret.append(self._tab.getVarName(j))
+        return ret
+
+    def getBFS(self) -> dict[int,Frac]:
+        '''
+        returns the values of the basic variables, keyed by column index
+        '''
+        ret: dict[int,Frac] = {}
+        for i,j in enumerate(self._bfs):
+            ret[j] = self._tab.getBi(i)
+        return ret
+
+    def getObjValue(self) -> Frac:
+        '''
+        the current objective value (for the minimization problem)
+        '''
+        return self._tab.getZ()
+
+    def getBFSNames(self) -> dict[str,Frac]:
+        '''
+        returns the values of the basic variables, keyed by variable name
+        assumes all variable names are unique
+        '''
+        names = self.getBasicSequenceNames()
+        ret: dict[str,Frac] = {}
+        for i,name in enumerate(names):
+            ret[name] = self._tab.getBi(i)
+        return ret
 
     def _pivot(self, r: int, c: int):
         ''' pivot without checking validity (internal use only) '''

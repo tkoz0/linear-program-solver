@@ -1,7 +1,7 @@
 from fractions import Fraction as Frac
 from typing import Literal
 
-from .tableau import FracTableau
+from .tableau import Tableau
 
 # fraction constants
 ZERO = Frac(0)
@@ -20,7 +20,7 @@ class FracSimplex:
     leaving the tableau as the optimal solution to the artificial problem
     '''
 
-    def __init__(self, tab: FracTableau):
+    def __init__(self, tab: Tableau):
         '''
         initializes an initial basic feasible solution
         exception if the original problem is infeasible

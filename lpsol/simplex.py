@@ -1,5 +1,6 @@
 from fractions import Fraction as Frac
 from typing import Literal
+import unittest
 
 from .tableau import Tableau
 
@@ -12,7 +13,7 @@ L_opt = Literal['optimal']
 L_unb = Literal['unbounded']
 L_inf = Literal['infeasible']
 
-class FracSimplex:
+class Simplex:
     '''
     state of the simplex algorithm with canonical form tableaus and pivoting
     between basic feasible solutions
@@ -28,8 +29,8 @@ class FracSimplex:
         if the tableau is modified using functions outside of this class,
         behavior is undefined
         '''
-        self._tab = tab
-        self._bfs = [-1]*tab.getNumCons()
+        self._tab: Tableau = tab
+        self._bfs: list[int] = [-1]*tab.getNumCons()
         self._find_bfs()
 
     def _find_bfs(self):
@@ -357,3 +358,22 @@ class FracSimplex:
                 # if greater, do nothing
             ret += pivotlist
         return ret
+
+    def __str__(self) -> str:
+        ret = str(self._tab)
+        vars = []
+        vals = []
+        for i,j in enumerate(self._bfs):
+            vars.append(self._tab.getVarName(j))
+            vals.append(str(self._tab.getBi(i)))
+        cw = [max(len(vars[i]),len(vals[i])) for i in range(len(self._bfs))]
+        pad = lambda s,l: ' '*(l-len(s)) + s
+        vars = [pad(v,cw[i]) for i,v in enumerate(vars)]
+        vals = [pad(v,cw[i]) for i,v in enumerate(vals)]
+        ret += f'BFS: ({",".join(vars)})\n'
+        ret += f'   = ({",".join(vals)})\n'
+        return ret
+
+    def __repr__(self) -> str:
+        return f'<{type(self).__name__} object at {hex(id(self))}, ' \
+            f'm = {self._tab._m}, n = {self._tab._n}'

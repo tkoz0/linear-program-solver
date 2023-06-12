@@ -26,6 +26,9 @@ class LinConTest(unittest.TestCase):
     def test_simplify(self):
         pass
 
+    def test_evaluate(self):
+        pass
+
     def test_add(self):
         pass
 

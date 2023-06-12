@@ -1,7 +1,7 @@
 from fractions import Fraction as Frac
 import unittest
 
-from . import LinExpr
+from . import LinExpr, LinCon
 
 class LinExprTest(unittest.TestCase):
     '''
@@ -25,6 +25,24 @@ class LinExprTest(unittest.TestCase):
 
     def tearDown(self):
         pass
+
+    def test_getConstant(self):
+        self.assertEqual(self.a1.getConstant(),0)
+        self.assertEqual(self.a2.getConstant(),Frac(2,3))
+        self.assertEqual(self.a3.getConstant(),-Frac(1,6))
+        self.assertEqual(self.a4.getConstant(),-2)
+        self.assertEqual(self.b1.getConstant(),0)
+        self.assertEqual(self.b2.getConstant(),Frac(2,7))
+        self.assertEqual(self.b3.getConstant(),Frac(-1,16))
+        self.assertEqual(self.b4.getConstant(),0)
+
+    def test_getCoefficient(self):
+        self.assertEqual(self.a1.getCoefficient('x1'),0)
+        self.assertEqual(self.a4.getCoefficient('some_var'),0)
+        self.assertEqual(self.b1.getCoefficient('x1'),1)
+        self.assertEqual(self.b3.getCoefficient('x3'),Frac(1,2))
+        self.assertEqual(self.b2.getCoefficient('s1'),0)
+        self.assertEqual(self.b4.getCoefficient('s2'),1)
 
     def test_copy(self):
         for e in self._all:
@@ -119,14 +137,50 @@ class LinExprTest(unittest.TestCase):
         self.assertEqual('2/3'-self.a2,self.a1)
         self.assertEqual(3-self.b2,LinExpr(1,'s2',Frac(19,7)))
 
-    def test_conEq(self):
-        pass
+    def test_constraintEq(self):
+        self.assertEqual(self.a1.constrantEq(self.a2),LinCon(self.a1,'==',self.a2))
+        self.assertEqual(self.a3.constrantEq(self.a4),LinCon(self.a3,'==',self.a4))
+        self.assertEqual(self.b1.constrantEq(self.b2),LinCon(self.b1,'==',self.b2))
+        self.assertEqual(self.b3.constrantEq(self.b4),LinCon(self.b3,'==',self.b4))
 
-    def test_conLe(self):
-        pass
+    def test_constraintLeq(self):
+        self.assertEqual(self.a1.constraintLeq(self.a2),LinCon(self.a1,'<=',self.a2))
+        self.assertEqual(self.a3.constraintLeq(self.a4),LinCon(self.a3,'<=',self.a4))
+        self.assertEqual(self.b1.constraintLeq(self.b2),LinCon(self.b1,'<=',self.b2))
+        self.assertEqual(self.b3.constraintLeq(self.b4),LinCon(self.b3,'<=',self.b4))
 
-    def test_conGe(self):
-        pass
+    def test_constraintGeq(self):
+        self.assertEqual(self.a1.constraintGeq(self.a2),LinCon(self.a1,'>=',self.a2))
+        self.assertEqual(self.a3.constraintGeq(self.a4),LinCon(self.a3,'>=',self.a4))
+        self.assertEqual(self.b1.constraintGeq(self.b2),LinCon(self.b1,'>=',self.b2))
+        self.assertEqual(self.b3.constraintGeq(self.b4),LinCon(self.b3,'>=',self.b4))
 
-    def test_subst(self):
-        pass
+    def test_evaluate(self):
+        zeros = {
+            'x1': 0,
+            'x2': 0,
+            'x3': 0,
+            's1': 0,
+            's2': 0
+        }
+        for e in self._all:
+            self.assertEqual(e.evaluate(zeros),e.getConstant())
+        self.assertEqual(self.a3.evaluate({}),-Frac(1,6))
+        self.assertEqual(self.a4.evaluate({}),-2)
+        self.assertEqual(self.b1.evaluate({'x1':1,'x2':2,'x3':2}),4)
+        self.assertEqual(self.b2.evaluate({'s1':51,'s2':'3/5','x1':'1/2'}),
+                         Frac(-11,35))
+
+    def test_substitute(self):
+        for e in self._all:
+            self.assertEqual(e,e.substitute({}))
+        sub1 = {
+            'x1': LinExpr(1,'s1',-1,'x4',1),
+            'x2': LinExpr('1/4','x3','-3/2','x4',Frac(1,3))
+        }
+        self.assertEqual(self.b1.substitute(sub1),LinExpr(1,'s1',-4,'x4',Frac(5,3)))
+        sub2 = {
+            'x1': LinExpr(5),
+            'x2': LinExpr(Frac(5,2),'x3',-1)
+        }
+        self.assertEqual(self.b3.substitute(sub2),LinExpr('-9/2','x3','-89/16'))

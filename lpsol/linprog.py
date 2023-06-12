@@ -51,6 +51,16 @@ class LinExpr:
                 if self.m[x] == ZERO: # simplify
                     self.m.pop(x)
 
+    def getConstant(self) -> Frac:
+        ''' the constant term in the expression '''
+        return self.c
+
+    def getCoefficient(self, x: str) -> Frac:
+        ''' coefficient of a variable, 0 if variable is not part of it '''
+        if x in self.m:
+            return self.m[x]
+        return ZERO
+
     def __eq__(self, a) -> bool:
         if isinstance(a,LinExpr):
             return self.m == a.m and self.c == a.c
@@ -167,19 +177,25 @@ class LinExpr:
             return LinCon(self,comp,a)
         return LinCon(self,comp,LinExpr(a))
 
-    def conEq(self, a) -> 'LinCon':
+    def constrantEq(self, a) -> 'LinCon':
         ''' create linear constraint self == a '''
         return self._make_con(a,'==')
 
-    def conLe(self, a) -> 'LinCon':
+    def constraintLeq(self, a) -> 'LinCon':
         ''' create linear constraint self <= a '''
         return self._make_con(a,'<=')
 
-    def conGe(self, a) -> 'LinCon':
+    def constraintGeq(self, a) -> 'LinCon':
         ''' create linear constraint self >= a '''
         return self._make_con(a,'>=')
 
-    def subst(self, vars: dict[str,Any]) -> 'LinExpr':
+    def evaluate(self, vars: dict[str,Any]) -> Frac:
+        '''
+        evaluate the value of given numerical values for the variables
+        '''
+        return self.c + sum(c*Frac(vars[x]) for x,c in self.m.items())
+
+    def substitute(self, vars: dict[str,Any]) -> 'LinExpr':
         '''
         substitute variables with other linear expressions given a mapping
         leaves variable unchanged if it is not present in the dictionary
@@ -218,6 +234,10 @@ class LinCon:
         else:
             self.right: LinExpr = LinExpr(right)
 
+    def __eq__(self, a) -> bool:
+        return isinstance(a,LinCon) and self.left == a.left \
+            and self.comp == a.comp and self.right == a.right
+
     def copy(self) -> 'LinCon':
         ''' return an identical copy '''
         return LinCon(self.left.copy(),self.comp,self.right.copy())
@@ -243,6 +263,19 @@ class LinCon:
         c = con.c
         con.c = ZERO
         return LinCon(con,self.comp,LinExpr(-c))
+
+    def evaluate(self, vars: dict[str,Any]) -> bool:
+        '''
+        evaluate the truth value given numerical values for each variable
+        '''
+        left = self.left.evaluate(vars)
+        right = self.right.evaluate(vars)
+        if self.comp == '<=':
+            return left <= right
+        elif self.comp == '>=':
+            return left >= right
+        else:
+            return left == right
 
     # self is: left comp right
 

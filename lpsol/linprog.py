@@ -222,7 +222,10 @@ class LinExpr:
         return ret
 
 class LinCon:
-    ''' 2 linear expressions compared by <= >= or == '''
+    '''
+    linear constraint representation
+    2 linear expressions compared by <= >= or ==
+    '''
     def __init__(self, left, comp: Comp, right):
         if isinstance(left,LinExpr):
             self.left: LinExpr = left
@@ -277,27 +280,33 @@ class LinCon:
         else:
             return left == right
 
-    # self is: left comp right
+    def addLeft(self, a):
+        ''' add to the left side '''
+        if isinstance(a,LinExpr):
+            self.left += a
+        else:
+            self.left += Frac(a)
 
-    def __add__(self, a) -> 'LinCon':
-        ret = self.copy()
-        ret.right += a
-        return ret
+    def addRight(self, a):
+        ''' add to the right side '''
+        if isinstance(a,LinExpr):
+            self.right += a
+        else:
+            self.right += Frac(a)
 
-    def __sub__(self, a) -> 'LinCon':
-        ret = self.copy()
-        ret.right -= a
-        return ret
+    def subLeft(self, a):
+        ''' subtract from the left side '''
+        if isinstance(a,LinExpr):
+            self.left -= a
+        else:
+            self.left -= Frac(a)
 
-    def __radd__(self, a) -> 'LinCon':
-        ret = self.copy()
-        ret.left += a
-        return ret
-
-    def __rsub__(self, a) -> 'LinCon':
-        ret = self.copy()
-        ret.left = - (ret.left - a)
-        return ret
+    def subRight(self, a):
+        ''' subtract from the right side '''
+        if isinstance(a,LinExpr):
+            self.right -= a
+        else:
+            self.right -= Frac(a)
 
 class LinVar:
     '''

@@ -2,7 +2,7 @@ import unittest
 
 class SimplexTest(unittest.TestCase):
     '''
-    tests for linear program
+    tests for simplex algorithm applied to linear programs
     '''
 
     def setUp(self):

@@ -312,77 +312,73 @@ class LinVar:
     '''
     a variable with its bounds
     used to simplify LPs before conversion to standard form
+    if variable is integral, bounds are adjusted automatically to be integers
     '''
     def __init__(self, x: str, integral: bool = False,
-                 lb: None|Any = None, ub: None|Any = None):
+                 lb: Any = None, ub: Any = None):
         if not RE_VARNAME.fullmatch(x):
             raise ValueError(f'invalid var name: {repr(x)}')
         self.x: str = x
         self.isint: bool = integral
         self.lb: None|Frac = None if lb is None else Frac(lb)
         self.ub: None|Frac = None if ub is None else Frac(ub)
+        if self.isint and isinstance(self.lb,Frac):
+            self.lb = Frac(math.ceil(self.lb))
+        if self.isint and isinstance(self.ub,Frac):
+            self.ub = Frac(math.floor(self.ub))
 
     def copy(self) -> 'LinVar':
         return LinVar(self.x,self.isint,self.lb,self.ub)
 
+    def getBounds(self) -> tuple[None|Frac,None|Frac]:
+        ''' return a tuple of the bounds, None indicates +inf or -inf '''
+        # bounds for integers required to be adjusted to integers
+        return (self.lb,self.ub)
+
+    def boundAbove(self, ub: Any):
+        ''' constrain this variable to be <= ub '''
+        ub = Frac(ub)
+        if self.ub is None or ub < self.ub:
+            self.ub = ub
+            if self.isint:
+                self.ub = Frac(math.floor(self.ub))
+
+    def boundBelow(self, lb: Any):
+        ''' constrain this variable to be >= lb '''
+        lb = Frac(lb)
+        if self.lb is None or lb > self.lb:
+            self.lb = lb
+            if self.isint:
+                self.lb = Frac(math.ceil(self.lb))
+
+    def isFeasible(self) -> bool:
+        ''' true if the set of feasible values is nonempty '''
+        return (self.lb is None) or (self.ub is None) or (self.lb <= self.ub)
+
     def __str__(self) -> str:
         lb = '-inf' if self.lb is None else self.lb
         ub = '+inf' if self.ub is None else self.ub
-        lbi = isinstance(lb,Frac) and lb.denominator == 1
-        ubi = isinstance(ub,Frac) and ub.denominator == 1
-        if lb == '-inf' and ub == '+inf':
-            msg = 'feasible'
-        elif self.isint:
-            if lb == '-inf' or ub == '+inf':
-                msg = 'feasible'
-            elif lb > ub:
-                msg = 'infeasible'
-            elif lbi or ubi:
-                msg = 'feasible'
-            else:
-                msg = ['','in'][math.floor(lb) == math.floor(ub)] + 'feasible'
-        else: # real
-            if lb == '-inf' or ub == '+inf':
-                msg = 'feasible'
-            else:
-                msg = ['','in'][lb > ub] + 'feasible'
-        return f'{self.x}@{"RZ"[self.isint]}[{lb},{ub}]({msg})'
+        return f'{self.x}@{"Z" if self.isint else "R"}[{lb},{ub}]'
 
     def __repr__(self) -> str:
+        if self.lb is None:
+            lb = None
+        elif self.lb.denominator == 1:
+            lb = self.lb.numerator
+        else:
+            lb = str(self.lb)
+        if self.ub is None:
+            ub = None
+        elif self.ub.denominator == 1:
+            ub = self.ub.numerator
+        else:
+            ub = str(self.ub)
         return f'{type(self).__name__}({repr(self.x)},{repr(self.isint)},' \
-                f'{repr(self.lb)},{repr(self.ub)})'
+                f'{repr(lb)},{repr(ub)})'
 
-    def __eq__(self, a) -> 'LinVar': # self == a
-        ret = self.copy()
-        a = Frac(a)
-        if ret.ub is None or a < ret.ub:
-            ret.ub = a
-        if ret.lb is None or a > ret.lb:
-            ret.lb = a
-        return ret
-
-    def __le__(self, a) -> 'LinVar': # self <= a
-        ret = self.copy()
-        a = Frac(a)
-        if ret.ub is None or a < ret.ub:
-            ret.ub = a
-        return ret
-
-    def __ge__(self, a) -> 'LinVar': # self >= a
-        ret = self.copy()
-        a = Frac(a)
-        if ret.lb is None or a > ret.lb:
-            ret.lb = a
-        return ret
-
-    def __ne__(self, a):
-        raise NotImplementedError('can only use <= >= ==')
-
-    def __lt__(self, a):
-        raise NotImplementedError('can only use <= >= ==')
-
-    def __gt__(self, a):
-        raise NotImplementedError('can only use <= >= ==')
+    def __eq__(self, a) -> bool:
+        return isinstance(a,LinVar) and self.x == a.x and \
+            self.isint == a.isint and self.lb == a.lb and self.ub == a.ub
 
 class LinProg:
     '''
